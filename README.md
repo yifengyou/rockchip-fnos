@@ -1,5 +1,13 @@
 # Rockchip 适配 FNOS
 
+
+## 参考
+
+* <https://github.com/spdffxyp/yt_sdk/wiki/fnOS_dkms.md>
+* <https://greendamtan.github.io/2025/12/311906_change_dtb_in_fnos_arm/>
+
+
+
 ## 免责申明
 
 - 本仓库所提供的内容均基于公开、合法渠道整理，仅供用户参考与学习之用。
