@@ -5,9 +5,14 @@ on:
     # 每天 北京时间 03:00 (= UTC 19:00)
     - cron: "0 19 * * *"
   workflow_dispatch:
+  push:
+    branches:
+      - default
+    paths:
+      - '.github/workflows/fnos-download.yml'
 
 jobs:
-  update:
+  fnos-downloader:
     runs-on: ubuntu-latest
     steps:
       - name: 检出仓库
