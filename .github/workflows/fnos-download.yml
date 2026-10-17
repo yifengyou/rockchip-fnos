@@ -32,8 +32,39 @@ jobs:
       - name: 解析页面并生成链接清单
         working-directory: fnnas-downloader
         run: |
-          ./fnnas-downloader -list
+          rm -rf release
+          mkdir -p release
           ./fnnas-downloader -dump release
+
+      - name: 列出输出文件
+        run: |
+          ls -alh   fnnas-downloader/release/*
+          sha256sum fnnas-downloader/release/*
+
+      - name: 发布文件
+        uses: ncipollo/release-action@main
+        with:
+          tag: fnos_image_filelist
+          artifacts: fnnas-downloader/release/*.csv
+          allowUpdates: true
+          removeArtifacts: false
+          replacesArtifacts: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ## 飞牛镜像列表归档
+
+            ## 免责声明
+
+            - **按原样提供**：镜像不作任何保证，使用风险自负
+            - **无官方关联**：FNOS无任何关联、无任何商业关联
+            - **安全提示**：请及时更新补丁、修改默认密码、配置防火墙
+
+      - name: 解析页面并生成链接清单
+        working-directory: fnnas-downloader
+        run: |
+          rm -rf release
+          mkdir -p release
+          ./fnnas-downloader -list
           ./fnnas-downloader -config config-all.toml
 
       - name: 列出输出文件
@@ -46,13 +77,13 @@ jobs:
         uses: ncipollo/release-action@main
         with:
           tag: fnos_image
-          artifacts: fnnas-downloader/release/*
+          artifacts: fnnas-downloader/release/*.gz
           allowUpdates: true
           removeArtifacts: false
           replacesArtifacts: true
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            ## FNOS镜像归档
+            ## 飞牛镜像文件归档
 
             ## 免责声明
 
