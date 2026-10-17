@@ -23,7 +23,7 @@ download_host = "http://thunder.liveupdate.fnnas.com:8080"
 skip_verified = true
 
 # 单个文件下载失败后的重试次数
-retry = 5
+retry = 10
 
 # 开启下载的设备型号白名单。每条 pattern 做不区分大小写的子串匹配，
 # 会对设备的 name / original_name / url 三个字段都尝试匹配。
@@ -41,11 +41,14 @@ retry = 5
 # pattern = "友善"
 
 # --- 以下为本仓库(Rockchip)关注的开发板型号 ---
-[[devices]]
-pattern = "nanopi-r5s"
+#[[devices]]
+#pattern = "rock-5t"
+
+#[[devices]]
+#pattern = "nanopc-t6"
+
+#[[devices]]
+#pattern = "orangepi-5"
 
 [[devices]]
-pattern = "rock-5b"
-
-[[devices]]
-pattern = "orangepi-5"
+pattern = "*"

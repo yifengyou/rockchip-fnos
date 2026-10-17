@@ -1,0 +1,54 @@
+# fnnas ARM 下载器配置文件
+# 生成后可自行修改再次运行。
+
+# 下载页面地址（用于解析设备清单）
+page_url = "https://fnnas.com/download-arm"
+
+# 所有镜像文件平铺存放到该目录
+output_dir = "release"
+
+# 同时下载的并发数
+concurrency = 10
+
+# 抓取页面 / 下载文件时使用的 User-Agent
+user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# 实际下载源。直链 https://iso.liveupdate.fnnas.com 在部分网络环境会被
+# CDN 拦截(403)；迅雷镜像 http://thunder.liveupdate.fnnas.com:8080 路径
+# 相同且支持 Range 断点续传。程序会把页面直链的 host 替换为此值。
+# 留空则直接使用页面上的直链。
+download_host = "http://thunder.liveupdate.fnnas.com:8080"
+
+# 已存在且 MD5 校验通过的文件是否跳过下载
+skip_verified = true
+
+# 单个文件下载失败后的重试次数
+retry = 10
+
+# 开启下载的设备型号白名单。每条 pattern 做不区分大小写的子串匹配，
+# 会对设备的 name / original_name / url 三个字段都尝试匹配。
+#   - 留空（不写 [[devices]] 段）= 不下载任何设备
+#   - 写一条 pattern = "*"        = 下载全部设备
+#
+# 示例：
+# [[devices]]
+# pattern = "nanopi-r5s"
+#
+# [[devices]]
+# pattern = "rock-5b"
+#
+# [[devices]]
+# pattern = "友善"
+
+# --- 以下为本仓库(Rockchip)关注的开发板型号 ---
+#[[devices]]
+#pattern = "rock-5t"
+
+#[[devices]]
+#pattern = "nanopc-t6"
+
+#[[devices]]
+#pattern = "orangepi-5"
+
+[[devices]]
+pattern = "*"

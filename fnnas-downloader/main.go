@@ -27,8 +27,7 @@ func main() {
 	configPath := flag.String("config", "config.toml", "配置文件路径")
 	listOnly := flag.Bool("list", false, "仅列出页面解析到的所有设备，不下载")
 	dryRun := flag.Bool("dry-run", false, "按白名单过滤后展示将下载哪些设备，不真正下载")
-	dumpDir := flag.String("dump", "", "把设备链接清单以 json/csv/md 写到该目录后退出（不下载镜像）")
-	dumpAll := flag.Bool("dump-all", false, "-dump 时写全部设备；默认只写白名单命中的设备")
+	dumpDir := flag.String("dump", "", "把全部设备的链接清单以带时间戳的 CSV 写到该目录后退出（不下载镜像）")
 	flag.Parse()
 
 	// 1. 读取配置（缺失会自动生成默认配置）
@@ -65,19 +64,14 @@ func main() {
 		return
 	}
 
-	// -dump 模式：把链接清单写到目录后退出，不下载镜像
+	// -dump 模式：把全部设备的链接清单以单个带时间戳的 CSV 写到目录后退出，不下载镜像
 	if *dumpDir != "" {
-		targets := devices
-		scope := "全部"
-		if !*dumpAll {
-			targets = filterByWhitelist(devices, patterns(cfg))
-			scope = "白名单已开启"
-		}
-		if err := DumpDevices(*dumpDir, targets, !*dumpAll, cfg.PageURL); err != nil {
+		path, err := DumpDevices(*dumpDir, devices, cfg.PageURL)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "写出清单失败: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("已把 %d 个设备(%s)的链接清单写到 %s\n", len(targets), scope, *dumpDir)
+		fmt.Printf("已把 %d 个设备的链接清单写到 %s\n", len(devices), path)
 		return
 	}
 

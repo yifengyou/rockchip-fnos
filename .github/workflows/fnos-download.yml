@@ -29,15 +29,15 @@ jobs:
         run: |
           ./fnnas-downloader -list
           ./fnnas-downloader -dump release
-          ./fnnas-downloader
+          ./fnnas-downloader -config config-all.toml
 
-      - name: List build output
+      - name: 列出输出文件
         run: |
           ls -alh   fnnas-downloader/release/*
           sha256sum fnnas-downloader/release/*
 
 
-      - name: Upload Image to Release
+      - name: 发布文件
         uses: ncipollo/release-action@main
         with:
           tag: fnos_image
