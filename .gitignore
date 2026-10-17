@@ -1,0 +1,9 @@
+# Go 构建产物
+fnnas-downloader/fnnas-downloader
+
+# 下载的镜像本体（不纳入仓库，只存链接清单）
+fnnas-downloader/downloads/
+downloads/
+*.img.gz
+*.iso
+*.part

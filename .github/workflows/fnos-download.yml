@@ -1,0 +1,53 @@
+name: FNOS Image
+
+on:
+  schedule:
+    # 每天 北京时间 03:00 (= UTC 19:00)
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: fnnas-downloader/go.mod
+          cache: true
+          cache-dependency-path: fnnas-downloader/go.sum
+
+      - name: 构建下载器
+        working-directory: fnnas-downloader
+        run: go build -o fnnas-downloader .
+
+      - name: 解析页面并生成链接清单
+        working-directory: fnnas-downloader
+        run: ./fnnas-downloader -dump ../release
+
+      - name: List build output
+        run: |
+          ls -alh  release/*
+          md5sum release/*
+
+
+      - name: Upload Image to Release
+        uses: ncipollo/release-action@main
+        with:
+          tag: fnos_image
+          artifacts: release/*
+          allowUpdates: true
+          removeArtifacts: false
+          replacesArtifacts: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ## FNOS镜像归档
+
+            ## 免责声明
+
+            - **按原样提供**：镜像不作任何保证，使用风险自负
+            - **无官方关联**：FNOS无任何关联、无任何商业关联
+            - **安全提示**：请及时更新补丁、修改默认密码、配置防火墙
