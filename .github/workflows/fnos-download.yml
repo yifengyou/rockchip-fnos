@@ -165,6 +165,7 @@ jobs:
           tag: fnos_image
           artifacts: |
             fnnas-downloader/release/*.gz
+            fnnas-downloader/release/*.iso
           allowUpdates: true
           removeArtifacts: false
           replacesArtifacts: true
@@ -177,3 +178,4 @@ jobs:
             - **按原样提供**：镜像不作任何保证，使用风险自负
             - **无官方关联**：FNOS无任何关联、无任何商业关联
             - **安全提示**：请及时更新补丁、修改默认密码、配置防火墙
+
