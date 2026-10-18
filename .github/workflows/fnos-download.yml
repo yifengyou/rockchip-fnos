@@ -152,9 +152,9 @@ jobs:
         run: |
           rm -rf release
           mkdir -p release
-          # -split 2G: 把超过 2GB 的文件切成 -part01/-part02 ... 并删除原文件，
-          # 规避 GitHub Releases 单文件 2GB 上传限制。
-          ./fnnas-downloader -devices "${{ matrix.pattern }}" -split 2G
+          # -split 1.9G: 把超过 1.9GB 的文件切成 -part01/-part02 ... 并删除原文件，
+          # 规避 GitHub Releases 单文件 1.9GB 上传限制。
+          ./fnnas-downloader -devices "${{ matrix.pattern }}" -split 1.9G
 
       - name: 列出输出文件
         run: |
