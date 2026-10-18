@@ -123,6 +123,10 @@ jobs:
           - group: misc-5
             pattern: "/mrkaio-m68s/,/mrkaio-m68s-plus/"
 
+          # --- x86_64 fnOS 安装 ISO（单独一组，约 3.7GB）---
+          - group: x86
+            pattern: "x86"
+
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
@@ -161,7 +165,6 @@ jobs:
           tag: fnos_image
           artifacts: |
             fnnas-downloader/release/*.gz
-            fnnas-downloader/release/*.iso
           allowUpdates: true
           removeArtifacts: false
           replacesArtifacts: true

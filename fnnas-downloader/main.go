@@ -61,15 +61,31 @@ func main() {
 		fmt.Printf("使用命令行白名单 (%d 条): %v\n", len(cfg.Devices), patterns(cfg))
 	}
 
-	// 2. 抓取并解析页面
-	fmt.Printf("抓取页面: %s\n", cfg.PageURL)
+	// 2. 抓取并解析页面（ARM + x86）
+	fmt.Printf("抓取 ARM 页面: %s\n", cfg.PageURL)
 	html, err := FetchPage(cfg.PageURL, cfg.UserAgent, 30*time.Second)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "抓取页面失败: %v\n", err)
+		fmt.Fprintf(os.Stderr, "抓取 ARM 页面失败: %v\n", err)
 		os.Exit(1)
 	}
 	devices := ParseDevices(html)
 	fmt.Printf("解析到 %d 个 ARM 设备\n", len(devices))
+
+	// 同时抓取 x86 页面（/download），解析其中的 fnOS ISO 条目
+	var x86Entries []DeviceEntry
+	if cfg.EnableX86 && cfg.X86PageURL != "" {
+		fmt.Printf("抓取 x86 页面: %s\n", cfg.X86PageURL)
+		x86HTML, xerr := FetchPage(cfg.X86PageURL, cfg.UserAgent, 30*time.Second)
+		if xerr != nil {
+			fmt.Fprintf(os.Stderr, "抓取 x86 页面失败: %v\n", xerr)
+			os.Exit(1)
+		}
+		x86Entries = ParseX86(x86HTML)
+		fmt.Printf("解析到 %d 个 x86 ISO 条目\n", len(x86Entries))
+	}
+
+	// 合并：ARM 设备在前，x86 ISO 在后
+	devices = append(devices, x86Entries...)
 
 	if *listOnly {
 		fmt.Println()
@@ -79,7 +95,7 @@ func main() {
 
 	// -dump 模式：把全部设备的链接清单以单个带时间戳的 CSV 写到目录后退出，不下载镜像
 	if *dumpDir != "" {
-		path, err := DumpDevices(*dumpDir, devices, cfg.PageURL)
+		path, err := DumpDevices(*dumpDir, devices, cfg.PageURL, cfg.X86PageURL)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "写出清单失败: %v\n", err)
 			os.Exit(1)
@@ -225,10 +241,14 @@ func filterByWhitelist(devices []DeviceEntry, patterns []string) []DeviceEntry {
 
 // printDeviceTable 打印设备清单表格。
 func printDeviceTable(devices []DeviceEntry) {
-	fmt.Printf("%-3s  %-34s  %-32s  %s\n", "#", "设备名", "MD5", "下载链接")
-	fmt.Println("----------------------------------------------------------------------------------------------------------")
+	fmt.Printf("%-3s  %-4s  %-32s  %-32s  %s\n", "#", "架构", "设备名", "MD5", "下载链接")
+	fmt.Println("----------------------------------------------------------------------------------------------------------------------")
 	for i, d := range devices {
-		fmt.Printf("%-3d  %-34s  %-32s  %s\n", i+1, truncate(d.Name, 34), d.MD5, d.URL)
+		arch := d.Arch
+		if arch == "" {
+			arch = "arm"
+		}
+		fmt.Printf("%-3d  %-4s  %-32s  %-32s  %s\n", i+1, arch, truncate(d.Name, 32), d.MD5, d.URL)
 	}
 }
 

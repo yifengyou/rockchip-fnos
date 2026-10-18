@@ -1,8 +1,15 @@
-# fnnas ARM 下载器配置文件
+# fnnas 下载器配置文件（ARM + x86）
 # 生成后可自行修改再次运行。
 
-# 下载页面地址（用于解析设备清单）
+# ARM 下载页面地址（用于解析 ARM 设备清单）
 page_url = "https://fnnas.com/download-arm"
+
+# x86 下载页面地址（用于解析 fnOS x86_64 安装 ISO）
+# 设为空字符串或把 enable_x86 改为 false 可关闭 x86 抓取。
+x86_page_url = "https://fnnas.com/download"
+
+# 是否同时抓取并下载 x86 的 fnOS 安装 ISO
+enable_x86 = true
 
 # 所有镜像文件平铺存放到该目录
 output_dir = "release"

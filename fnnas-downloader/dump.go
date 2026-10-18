@@ -16,7 +16,8 @@ import (
 
 // DumpDevices 把设备清单以单个带时间戳的 CSV 文件写到 dir 目录。
 // 返回写出的文件路径。
-func DumpDevices(dir string, devices []DeviceEntry, pageURL string) (string, error) {
+// armPageURL / x86PageURL 用于在 CSV 的"来源页面"列按条目架构填入对应页面。
+func DumpDevices(dir string, devices []DeviceEntry, armPageURL, x86PageURL string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
@@ -25,14 +26,14 @@ func DumpDevices(dir string, devices []DeviceEntry, pageURL string) (string, err
 	filename := fmt.Sprintf("fnos-filelist-%s.csv", ts)
 	path := filepath.Join(dir, filename)
 
-	if err := writeCSV(path, devices); err != nil {
+	if err := writeCSV(path, devices, armPageURL, x86PageURL); err != nil {
 		return "", err
 	}
 	return path, nil
 }
 
 // writeCSV 把设备清单写成 UTF-8 BOM 的 CSV，Excel 友好。
-func writeCSV(path string, devices []DeviceEntry) error {
+func writeCSV(path string, devices []DeviceEntry, armPageURL, x86PageURL string) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -44,20 +45,29 @@ func writeCSV(path string, devices []DeviceEntry) error {
 	defer w.Flush()
 
 	if err := w.Write([]string{
-		"序号", "设备名", "原始名", "MD5",
+		"序号", "架构", "设备名", "原始名", "MD5",
 		"直链下载地址", "迅雷链接", "来源页面",
 	}); err != nil {
 		return err
 	}
 	for i, d := range devices {
+		arch := d.Arch
+		if arch == "" {
+			arch = "arm"
+		}
+		src := armPageURL
+		if arch == "x86" {
+			src = x86PageURL
+		}
 		if err := w.Write([]string{
 			fmt.Sprintf("%d", i+1),
+			arch,
 			d.Name,
 			d.OriginalName,
 			d.MD5,
 			d.URL,
 			d.Thunder,
-			"https://fnnas.com/download-arm",
+			src,
 		}); err != nil {
 			return err
 		}
