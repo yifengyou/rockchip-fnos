@@ -7,6 +7,10 @@ package main
 //   go run . -config my.toml       # 指定配置文件
 //   go run . -list                 # 仅列出页面解析到的所有设备，不下载
 //   go run . -dry-run              # 按白名单过滤后展示将下载哪些，不真正下载
+//   go run . -devices "nanopi-r5s,rock-5b"  # 命令行指定白名单（优先于配置文件）
+//
+// 过滤优先级: 命令行 -devices > 配置文件 [[devices]] 段。便于在 CI matrix 中
+// 按设备分组分流下载，避免单次任务下载全部镜像超出磁盘限额。
 //
 // 构建:
 //   go build -o fnnas-downloader .
@@ -17,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -28,6 +33,7 @@ func main() {
 	listOnly := flag.Bool("list", false, "仅列出页面解析到的所有设备，不下载")
 	dryRun := flag.Bool("dry-run", false, "按白名单过滤后展示将下载哪些设备，不真正下载")
 	dumpDir := flag.String("dump", "", "把全部设备的链接清单以带时间戳的 CSV 写到该目录后退出（不下载镜像）")
+	devicesFlag := flag.String("devices", "", "命令行设备白名单，逗号分隔（优先于配置文件的 [[devices]] 段）。例: -devices \"nanopi-r5s,rock-5b\"；用 \"*\" 下载全部")
 	flag.Parse()
 
 	// 1. 读取配置（缺失会自动生成默认配置）
@@ -39,13 +45,20 @@ func main() {
 	}
 	if generated {
 		fmt.Printf("未找到配置文件，已生成默认配置: %s\n", *configPath)
-		if !*listOnly {
-			fmt.Println("请编辑其中的 [[devices]] 段选择要下载的设备型号后重新运行。")
-			fmt.Println("使用 pattern = \"*\" 可下载全部设备。")
+		if !*listOnly && *devicesFlag == "" {
+			fmt.Println("请编辑其中的 [[devices]] 段选择要下载的设备型号后重新运行，")
+			fmt.Println("或使用 -devices \"nanopi-r5s,rock-5b\" 在命令行指定，使用 \"*\" 可下载全部设备。")
 			return
 		}
-		fmt.Println("（-list 模式下继续列出所有设备）")
+		fmt.Println("（-list 模式或 -devices 已指定，继续执行）")
 		fmt.Println()
+	}
+
+	// 1.5 命令行 -devices 优先于配置文件的 [[devices]] 段。
+	//     这是为了支持 CI matrix 按设备分流下载。
+	if *devicesFlag != "" {
+		cfg.Devices = parseDevicesFlag(*devicesFlag)
+		fmt.Printf("使用命令行白名单 (%d 条): %v\n", len(cfg.Devices), patterns(cfg))
 	}
 
 	// 2. 抓取并解析页面
@@ -82,12 +95,11 @@ func main() {
 
 	if len(selected) == 0 {
 		fmt.Println("没有命中的设备。请在配置文件中添加 [[devices]] 段，")
-		fmt.Println("例如:")
-		fmt.Println("  [[devices]]")
-		fmt.Println("  pattern = \"nanopi-r5s\"")
+		fmt.Println("或使用 -devices 在命令行指定，例如:")
+		fmt.Println("  -devices \"nanopi-r5s\"")
+		fmt.Println("  -devices \"nanopi-r5s,rock-5b\"")
 		fmt.Println("或下载全部:")
-		fmt.Println("  [[devices]]")
-		fmt.Println("  pattern = \"*\"")
+		fmt.Println("  -devices \"*\"")
 		return
 	}
 
@@ -181,6 +193,21 @@ func patterns(cfg Config) []string {
 	out := make([]string, 0, len(cfg.Devices))
 	for _, d := range cfg.Devices {
 		out = append(out, d.Pattern)
+	}
+	return out
+}
+
+// parseDevicesFlag 解析命令行 -devices 参数（逗号分隔），返回 Device 切片。
+// 空白条目会被忽略。"*" 表示下载全部。
+// 例: "nanopi-r5s,rock-5b,*" -> [{nanopi-r5s}, {rock-5b}, {*}]
+func parseDevicesFlag(s string) []Device {
+	var out []Device
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, Device{Pattern: p})
 	}
 	return out
 }

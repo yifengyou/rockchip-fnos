@@ -72,6 +72,12 @@ pattern = "orangepi-5"
 # 指定配置文件
 ./fnnas-downloader -config my-config.toml
 
+# 命令行指定设备白名单（优先于配置文件的 [[devices]] 段）
+./fnnas-downloader -devices "nanopi-r5s,rock-5b"
+
+# 下载全部设备
+./fnnas-downloader -devices "*"
+
 # 仅列出页面解析到的所有设备（不下载）
 ./fnnas-downloader -list
 
@@ -84,8 +90,10 @@ pattern = "orangepi-5"
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `-config` | `config.toml` | 配置文件路径 |
+| `-devices` | 空 | 命令行设备白名单，逗号分隔，**优先于配置文件**。例: `-devices "nanopi-r5s,rock-5b"`；`"*"` 表示下载全部 |
 | `-list` | `false` | 仅列出页面所有设备，不下载 |
 | `-dry-run` | `false` | 按白名单过滤后展示将下载哪些，不真正下载 |
+| `-dump` | 空 | 把全部设备的链接清单以带时间戳的 CSV 写到该目录后退出，不下载镜像 |
 
 ## 配置项说明
 
@@ -99,6 +107,8 @@ pattern = "orangepi-5"
 | `skip_verified` | 已存在且 MD5 校验通过的文件是否跳过 |
 | `retry` | 单个文件下载失败后的重试次数 |
 | `[[devices]]` | 白名单规则，`pattern` 做不区分大小写的子串匹配；`"*"` 表示下载全部 |
+
+> **过滤优先级**：命令行 `-devices` 参数 > 配置文件 `[[devices]]` 段。当 `-devices` 非空时，配置文件中的白名单被忽略。这一机制可用于 CI matrix 按设备分组分流下载，避免单次任务下载全部镜像超出磁盘限额。
 
 ## 输出目录结构
 

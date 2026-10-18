@@ -51,4 +51,4 @@ retry = 10
 #pattern = "orangepi-5"
 
 [[devices]]
-pattern = "*"
+pattern = "nanopc-t6"

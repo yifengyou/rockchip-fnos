@@ -11,8 +11,16 @@ on:
     paths:
       - '.github/workflows/fnos-download.yml'
 
+# 同一 release 被多个 matrix job 并发写入，关闭自动取消以免artifact丢失
+concurrency:
+  group: fnos-image-release
+  cancel-in-progress: false
+
 jobs:
-  fnos-downloader:
+  # ──────────────────────────────────────────────────────────────────
+  # Job 1: 生成链接清单 CSV（单 job，发布到 fnos_image_filelist）
+  # ──────────────────────────────────────────────────────────────────
+  filelist:
     runs-on: ubuntu-latest
     steps:
       - name: 检出仓库
@@ -41,7 +49,7 @@ jobs:
           ls -alh   fnnas-downloader/release/*
           sha256sum fnnas-downloader/release/*
 
-      - name: 发布文件
+      - name: 发布清单文件
         uses: ncipollo/release-action@main
         with:
           tag: fnos_image_filelist
@@ -59,25 +67,101 @@ jobs:
             - **无官方关联**：FNOS无任何关联、无任何商业关联
             - **安全提示**：请及时更新补丁、修改默认密码、配置防火墙
 
-      - name: 解析页面并生成链接清单
+  # ──────────────────────────────────────────────────────────────────
+  # Job 2: 按设备分组下载镜像（matrix，发布到 fnos_image）
+  # 用 -devices 命令行白名单分流，每个 job 只下载一组设备，
+  # 避免单次任务下载全部镜像超出 runner 磁盘限额。
+  # pattern 用 /slug/ 形式（URL 路径段），版本无关且避免前缀误伤
+  # （如 /nanopi-m5/ 不会命中 /nanopi-m5-ufs/）。
+  # ──────────────────────────────────────────────────────────────────
+  download:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          # --- 友善 FriendlyELEC (18) ---
+          - group: friendly-1
+            pattern: "/nanopc-t4/,/nanopc-t6/,/nanopi-m4/,/nanopi-m5/,/nanopi-m5-ufs/"
+          - group: friendly-2
+            pattern: "/nanopi-m6/,/nanopi-r2s/,/nanopi-r3s/,/nanopi-r3s-lts/,/nanopi-r4s/"
+          - group: friendly-3
+            pattern: "/nanopi-r4se/,/nanopi-r5c/,/nanopi-r5s/,/nanopi-r6c/,/nanopi-r6s/"
+          - group: friendly-4
+            pattern: "/nanopi-r76s/,/nanopi-zero2/,/cm3588-nas/"
+
+          # --- 瑞莎 Radxa (17) ---
+          - group: radxa-e
+            pattern: "/cubie-a5e/,/radxa-e20c/,/radxa-e24c/,/radxa-e25/,/radxa-e52c/"
+          - group: radxa-rock-1
+            pattern: "/radxa-e54c/,/rock-2a-2f/,/rock-4d/,/rock-4d-ufs/,/rock-5-itx/"
+          - group: radxa-rock-2
+            pattern: "/rock-5a/,/rock-5b/,/rock-5b-5bp-5t/,/rock-5b-plus/,/rock-5c/"
+          - group: radxa-rock-3
+            pattern: "/rock-5t/,/rock-pi-e/"
+
+          # --- 香橙派 Orangepi (6) ---
+          - group: orangepi-1
+            pattern: "/orangepi-3b/,/orangepi-5/,/orangepi-5-plus/"
+          - group: orangepi-2
+            pattern: "/orangepi-zero3/,/orangepi-zero2/,/orangepi-zero2w/"
+
+          # --- 萤火虫 Firefly (5) ---
+          - group: firefly
+            pattern: "/roc-rk3328-cc/,/roc-rk3566-pc/,/roc-rk3568-pc/,/roc-rk3588s-pc/,/firefly-rk3399/"
+
+          # --- 其他厂商 (22) ---
+          - group: misc-1
+            pattern: "/boca-tcn100/,/cmcc-tcn200/,/hinlink-hnas/,/toybrick-x0/,/armsr/"
+          - group: misc-2
+            pattern: "/onethingcloud-oes/,/onethingcloud-oes-plus/,/dshanpi-a1/,/phicomm-n1/,/easepi-r1/"
+          - group: misc-3
+            pattern: "/bcm27xx/,/fastrhino-r66s/,/fastrhino-r68s/,/sostu-n990-plus/,/sostu-n990-pro-plus/"
+          - group: misc-4
+            pattern: "/mangopi-m28c/,/mangopi-m28k/,/cyber3588-aib/,/ipc-r/,/linkfog-ala1/"
+          - group: misc-5
+            pattern: "/mrkaio-m68s/,/mrkaio-m68s-plus/"
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 环境信息
+        run: |
+          sudo df -h
+          sudo lsblk
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: fnnas-downloader/go.mod
+          cache: true
+          cache-dependency-path: fnnas-downloader/go.sum
+
+      - name: 构建下载器
+        working-directory: fnnas-downloader
+        run: go build -o fnnas-downloader .
+
+      - name: 下载镜像 (${{ matrix.group }})
         working-directory: fnnas-downloader
         run: |
           rm -rf release
           mkdir -p release
-          ./fnnas-downloader -list
-          ./fnnas-downloader -config config-all.toml
+          ./fnnas-downloader -devices "${{ matrix.pattern }}"
 
       - name: 列出输出文件
         run: |
           ls -alh   fnnas-downloader/release/*
           sha256sum fnnas-downloader/release/*
 
-
-      - name: 发布文件
+      - name: 发布镜像文件
         uses: ncipollo/release-action@main
         with:
           tag: fnos_image
-          artifacts: fnnas-downloader/release/*.gz
+          artifacts: |
+            fnnas-downloader/release/*.gz
+            fnnas-downloader/release/*.iso
           allowUpdates: true
           removeArtifacts: false
           replacesArtifacts: true
