@@ -7,3 +7,7 @@ downloads/
 *.img.gz
 *.iso
 *.part
+# -split 切出来的分片文件（foo.iso-part01 ...）
+*-part0?
+*-part1?
+*-part2?

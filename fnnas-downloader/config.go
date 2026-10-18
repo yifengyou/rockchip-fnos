@@ -48,6 +48,7 @@ type Config struct {
 	DownloadHost string   `toml:"download_host"`
 	SkipVerified bool     `toml:"skip_verified"`
 	Retry        int      `toml:"retry"`
+	SplitSize    int64    `toml:"split_size"` // 每份最大字节数；>0 时下载完成后把超过该大小的文件切成 -part01/-part02 ... 并删除原文件（规避 GitHub 单文件 2GB 限制）。0 = 不切分
 	Devices      []Device `toml:"devices"`
 }
 
@@ -102,6 +103,9 @@ func LoadConfig(path string) (cfg Config, generated bool, err error) {
 	if cfg.X86PageURL == "" {
 		cfg.X86PageURL = "https://fnnas.com/download"
 	}
+	if cfg.SplitSize < 0 {
+		cfg.SplitSize = 0
+	}
 	return cfg, false, nil
 }
 
@@ -147,6 +151,13 @@ skip_verified = true
 
 # 单个文件下载失败后的重试次数
 retry = 5
+
+# 下载完成后按此大小切分大文件，切成 -part01/-part02 ... 并删除原文件
+# （规避 GitHub Releases 单文件 2GB 上传限制）。
+#   - 0 或不写 = 不切分
+#   - 支持 K/M/G/T 单位，如 1.8G、1800M；裸数字视为字节
+# 也可用命令行 -split 1.8G 覆盖此值。
+# split_size = 0
 
 # 开启下载的设备型号白名单。每条 pattern 做不区分大小写的子串匹配，
 # 会对设备的 name / original_name / url 三个字段都尝试匹配。

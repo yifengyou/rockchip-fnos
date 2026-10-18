@@ -4,7 +4,7 @@
 并从 [https://fnnas.com/download](https://fnnas.com/download) 解析 fnOS x86_64 安装 ISO，
 按配置文件里的型号白名单，把指定镜像下载到本地目录。
 
-支持 **配置驱动的型号选择**、**断点续传**、**并发下载**、**MD5 校验** 与 **跳过已校验文件**。
+支持 **配置驱动的型号选择**、**断点续传**、**并发下载**、**MD5 校验** 与 **跳过已校验文件**，并可按大小自动**分片**以规避 GitHub 单文件 2GB 上传限制。
 ARM 与 x86 在同一次运行中一起抓取、一起下载。
 
 ## 特性
@@ -17,6 +17,7 @@ ARM 与 x86 在同一次运行中一起抓取、一起下载。
 | MD5 校验 | 下载完成后用页面提供的 MD5 校验，失败自动重试 |
 | 跳过已校验文件 | 本地已存在且 MD5 匹配的文件直接跳过，避免重复下载 |
 | 下载源重写 | 直链 `https://iso.liveupdate.fnnas.com` 在部分网络会被 CDN 拦截（403），程序默认改用可访问且支持 Range 的迅雷镜像 `http://thunder.liveupdate.fnnas.com:8080`（路径相同） |
+| 大文件分片 | 用 `-split 1.8G` 把超过阈值的文件切成 `name-part01`/`name-part02` ... 并删除原文件，规避 GitHub Releases 单文件 2GB 上传限制。再次运行时自动识别已有分片并校验合并 MD5，跳过重复下载 |
 
 ## 构建
 
@@ -89,6 +90,9 @@ pattern = "x86"
 # 只下载 x86 的 fnOS 安装 ISO
 ./fnnas-downloader -devices "x86"
 
+# 下载并把超过 1.8GB 的文件切成 -part01/-part02 ...（规避 GitHub 单文件 2GB 限制）
+./fnnas-downloader -devices "x86" -split 1.8G
+
 # 仅列出页面解析到的所有设备（不下载）
 ./fnnas-downloader -list
 
@@ -105,6 +109,7 @@ pattern = "x86"
 | `-list` | `false` | 仅列出页面所有设备，不下载 |
 | `-dry-run` | `false` | 按白名单过滤后展示将下载哪些，不真正下载 |
 | `-dump` | 空 | 把全部设备的链接清单以带时间戳的 CSV 写到该目录后退出，不下载镜像 |
+| `-split` | 空 | 下载完成后把超过该大小的文件切成 `-part01`/`-part02` ... 并删除原文件。例: `-split 1.8G`、`-split 1800M`、`-split 2000000000`；留空则不切分 |
 
 ## 配置项说明
 
@@ -119,6 +124,7 @@ pattern = "x86"
 | `download_host` | 实际下载源；非空时把页面直链的 host 替换为此值。留空则直接用页面直链 |
 | `skip_verified` | 已存在且 MD5 校验通过的文件是否跳过 |
 | `retry` | 单个文件下载失败后的重试次数 |
+| `split_size` | 每份最大字节数；>0 时下载完成后把超过该大小的文件切成 `-part01`/`-part02` ... 并删除原文件。支持 K/M/G/T 单位（如 `1.8G`），裸数字视为字节。`0` = 不切分。可用命令行 `-split` 覆盖 |
 | `[[devices]]` | 白名单规则，`pattern` 做不区分大小写的子串匹配；`"*"` 表示下载全部 |
 
 > **x86 条目匹配**：x86 的 fnOS ISO 条目名形如 `飞牛 fnOS x86_64 1.2.0800`，url 含 `/x86_64/trim/`，可用 `pattern = "x86"`、`"x86_64"`、`"fnOS x86_64"` 或 `"trim"` 单独匹配它。
@@ -136,6 +142,17 @@ downloads/
 ├── fnos_Mainland-PE_arm_1.2.0701_orangepi-5_2882.img.gz
 └── fnos_Mainland-PE_x86_1.2.0800_2778.iso                       # x86_64 fnOS 安装镜像
 ```
+
+启用 `-split 1.8G` 后，超过 1.8GB 的文件会被切成多份并删除原文件：
+
+```
+downloads/
+├── fnos_Mainland-PE_x86_1.2.0800_2778.iso-part01   # 分片 1
+├── fnos_Mainland-PE_x86_1.2.0800_2778.iso-part02   # 分片 2
+└── fnos_Mainland-PE_x86_1.2.0800_2778.iso-part03   # 分片 3（余量）
+```
+
+分片按序号合并即为原始文件；再次运行时程序会自动识别已有分片、按序合并校验 MD5，通过则跳过下载。
 
 文件名直接取自下载 URL 的 basename，自带设备标识，无需额外子目录。
 

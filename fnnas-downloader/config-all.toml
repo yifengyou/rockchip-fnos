@@ -32,6 +32,13 @@ skip_verified = true
 # 单个文件下载失败后的重试次数
 retry = 10
 
+# 下载完成后按此大小切分大文件，切成 -part01/-part02 ... 并删除原文件
+# （规避 GitHub Releases 单文件 2GB 上传限制）。
+#   - 0 或不写 = 不切分
+#   - 支持 K/M/G/T 单位，如 1.8G、1800M；裸数字视为字节
+# 也可用命令行 -split 1.8G 覆盖此值（CI 中即用命令行方式）。
+# split_size = 0
+
 # 开启下载的设备型号白名单。每条 pattern 做不区分大小写的子串匹配，
 # 会对设备的 name / original_name / url 三个字段都尝试匹配。
 #   - 留空（不写 [[devices]] 段）= 不下载任何设备

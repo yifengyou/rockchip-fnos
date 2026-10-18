@@ -34,6 +34,7 @@ func main() {
 	dryRun := flag.Bool("dry-run", false, "按白名单过滤后展示将下载哪些设备，不真正下载")
 	dumpDir := flag.String("dump", "", "把全部设备的链接清单以带时间戳的 CSV 写到该目录后退出（不下载镜像）")
 	devicesFlag := flag.String("devices", "", "命令行设备白名单，逗号分隔（优先于配置文件的 [[devices]] 段）。例: -devices \"nanopi-r5s,rock-5b\"；用 \"*\" 下载全部")
+	splitFlag := flag.String("split", "", "下载完成后把超过该大小的文件切成 -part01/-part02 ... 并删除原文件（规避 GitHub 单文件 2GB 限制）。例: -split 1.8G；留空则不切分")
 	flag.Parse()
 
 	// 1. 读取配置（缺失会自动生成默认配置）
@@ -59,6 +60,20 @@ func main() {
 	if *devicesFlag != "" {
 		cfg.Devices = parseDevicesFlag(*devicesFlag)
 		fmt.Printf("使用命令行白名单 (%d 条): %v\n", len(cfg.Devices), patterns(cfg))
+	}
+
+	// 1.6 命令行 -split 优先于配置文件的 split_size。
+	//     解析形如 "1.8G"/"1800M"/"2000000000" 的尺寸，>0 时下载完成后按此大小切分文件。
+	if *splitFlag != "" {
+		size, err := parseSplitSize(*splitFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "解析 -split 失败: %v\n", err)
+			os.Exit(1)
+		}
+		cfg.SplitSize = size
+	}
+	if cfg.SplitSize > 0 {
+		fmt.Printf("启用分片: 单文件超过 %s 将切成 -part01/-part02 ... 并删除原文件\n", humanSize(cfg.SplitSize))
 	}
 
 	// 2. 抓取并解析页面（ARM + x86）

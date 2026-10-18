@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -32,6 +33,7 @@ type Downloader struct {
 	DownloadHost string // 若非空，把页面直链的 scheme+host 替换为此值
 	SkipVerified bool
 	Retry        int
+	SplitSize    int64 // 每份最大字节数；>0 时下载完成后把超过该大小的文件切成 -part01/-part02 ... 并删除原文件（规避 GitHub 单文件 2GB 限制）
 	HTTPClient   *http.Client
 	OnProgress   func(device string, msg string) // 可选的进度回调
 }
@@ -44,6 +46,7 @@ func NewDownloader(cfg Config) *Downloader {
 		DownloadHost: cfg.DownloadHost,
 		SkipVerified: cfg.SkipVerified,
 		Retry:        cfg.Retry,
+		SplitSize:    cfg.SplitSize,
 		HTTPClient: &http.Client{
 			Timeout: 0, // 下载大文件不设整体超时，靠每次连接的临时 client 控制
 		},
@@ -91,11 +94,36 @@ func (dl *Downloader) log(device, format string, args ...any) {
 }
 
 // ShouldSkip 判断是否可以跳过下载:
-//   - 最终文件已存在且 SkipVerified 开启，且 MD5 匹配 -> 跳过
+//   - 开启 SplitSize 时，校验所有分片存在且 MD5 匹配
+//   - 否则，最终文件已存在且 SkipVerified 开启，且 MD5 匹配 -> 跳过
 func (dl *Downloader) ShouldSkip(d DeviceEntry) (bool, error) {
 	if !dl.SkipVerified {
 		return false, nil
 	}
+	// 分片模式
+	if dl.SplitSize > 0 {
+		parts := dl.findParts(d)
+		if len(parts) == 0 {
+			return false, nil
+		}
+		if d.MD5 == "" {
+			dl.log(d.Name, "已存在 %d 个分片，但页面未提供 MD5，跳过校验直接视为已完成", len(parts))
+			return true, nil
+		}
+		dl.log(d.Name, "已存在 %d 个分片，校验 MD5 ...", len(parts))
+		ok, err := verifyPartsMD5(parts, d.MD5)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			dl.log(d.Name, "MD5 校验通过（分片合并），跳过下载")
+			return true, nil
+		}
+		dl.log(d.Name, "MD5 不匹配，删除旧分片重新下载")
+		_ = removeParts(parts)
+		return false, nil
+	}
+	// 单文件模式
 	final := dl.finalPath(d)
 	info, err := os.Stat(final)
 	if err != nil {
@@ -255,6 +283,14 @@ func (dl *Downloader) downloadOnce(ctx context.Context, d DeviceEntry, target, p
 	if err := os.Rename(part, final); err != nil {
 		return fmt.Errorf("重命名失败: %w", err)
 	}
+
+	// 如果设置了 SplitSize 且文件超过阈值，切成 -part01/-part02 ... 并删除原文件
+	// （规避 GitHub Releases 单文件 2GB 上传限制）
+	if dl.SplitSize > 0 {
+		if err := dl.splitFile(d, final); err != nil {
+			return fmt.Errorf("分片失败: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -331,4 +367,197 @@ func humanSize(n int64) string {
 func sanitize(s string) string {
 	r := strings.NewReplacer("/", "_", "\\", "_", ":", "_", " ", "-")
 	return r.Replace(s)
+}
+
+// partSuffix 给出第 n 份分片（从 1 开始）的后缀，固定两位补零：-part01 / -part02 ...
+// 注意：分片后缀用 "-partNN"，与下载过程中的临时文件后缀 ".part" 不同，
+// 不会和断点续传的 .part 临时文件混淆。
+func partSuffix(n int) string {
+	return fmt.Sprintf("-part%02d", n)
+}
+
+// partPathName 给出最终文件名对应的第 n 份分片文件名（不含目录）。
+// 例: foo.iso + n=1 -> foo.iso-part01
+func (dl *Downloader) partPathName(d DeviceEntry, n int) string {
+	return dl.fileName(d) + partSuffix(n)
+}
+
+// findParts 扫描 OutputDir，返回某设备最终文件对应的全部分片路径，按序号升序。
+// 通过 fileName + "-partNN" 前缀匹配。没有分片时返回 nil。
+func (dl *Downloader) findParts(d DeviceEntry) []string {
+	base := dl.fileName(d) + "-part"
+	entries, err := os.ReadDir(dl.OutputDir)
+	if err != nil {
+		return nil
+	}
+	var parts []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasPrefix(name, base) {
+			continue
+		}
+		// 后面必须恰好是 2 位数字
+		tail := name[len(base):]
+		if len(tail) != 2 {
+			continue
+		}
+		if tail[0] < '0' || tail[0] > '9' || tail[1] < '0' || tail[1] > '9' {
+			continue
+		}
+		parts = append(parts, filepath.Join(dl.OutputDir, name))
+	}
+	// 按 tail 字符串排序即可，因为两位补零
+	for i := 0; i < len(parts); i++ {
+		for j := i + 1; j < len(parts); j++ {
+			if parts[j] < parts[i] {
+				parts[i], parts[j] = parts[j], parts[i]
+			}
+		}
+	}
+	return parts
+}
+
+// splitFile 把 final 切成若干 -partNN 分片，每份不超过 SplitSize 字节，
+// 切完校验字节数合计与原文件一致后删除原文件。
+// 文件本身不超过阈值时不动它（保持单文件）。
+func (dl *Downloader) splitFile(d DeviceEntry, final string) error {
+	info, err := os.Stat(final)
+	if err != nil {
+		return err
+	}
+	totalSize := info.Size()
+	if totalSize <= dl.SplitSize {
+		// 不需要切
+		return nil
+	}
+	nParts := int(totalSize / dl.SplitSize)
+	if totalSize%dl.SplitSize != 0 {
+		nParts++
+	}
+	dl.log(d.Name, "文件 %s (%s) 超过 %s，拆分为 %d 份分片",
+		filepath.Base(final), humanSize(totalSize), humanSize(dl.SplitSize), nParts)
+
+	src, err := os.Open(final)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	buf := make([]byte, 256*1024)
+	var writtenTotal int64
+	for i := 1; i <= nParts; i++ {
+		partName := dl.partPathName(d, i)
+		partPath := filepath.Join(dl.OutputDir, partName)
+		dst, err := os.OpenFile(partPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+		if err != nil {
+			return err
+		}
+		var written int64
+		for written < dl.SplitSize {
+			remain := dl.SplitSize - written
+			if int64(len(buf)) > remain {
+				buf = buf[:remain]
+			}
+			n, rerr := src.Read(buf)
+			if n > 0 {
+				if _, werr := dst.Write(buf[:n]); werr != nil {
+					dst.Close()
+					return werr
+				}
+				written += int64(n)
+				writtenTotal += int64(n)
+			}
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil {
+				dst.Close()
+				return rerr
+			}
+		}
+		dst.Close()
+		dl.log(d.Name, "  -> %s (%s)", partName, humanSize(written))
+		// 恢复 buf 容量（上面可能截短了）
+		if cap(buf) < 256*1024 {
+			buf = make([]byte, 256*1024)
+		} else {
+			buf = buf[:cap(buf)]
+		}
+	}
+
+	if writtenTotal != totalSize {
+		return fmt.Errorf("分片字节数 %d 与原文件 %d 不一致，已中止（原文件保留）", writtenTotal, totalSize)
+	}
+
+	// 校验通过，删除原文件
+	if err := os.Remove(final); err != nil {
+		dl.log(d.Name, "警告: 删除原文件失败: %v（分片已生成）", err)
+		return err
+	}
+	dl.log(d.Name, "分片完成，已删除原文件 %s", filepath.Base(final))
+	return nil
+}
+
+// verifyPartsMD5 把所有分片按序合并计算 MD5，与期望值比较（不区分大小写）。
+func verifyPartsMD5(parts []string, expected string) (bool, error) {
+	h := md5.New()
+	for _, p := range parts {
+		f, err := os.Open(p)
+		if err != nil {
+			return false, err
+		}
+		if _, err := io.Copy(h, f); err != nil {
+			f.Close()
+			return false, err
+		}
+		f.Close()
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	return strings.EqualFold(got, expected), nil
+}
+
+// removeParts 删除一组分片文件（忽略不存在的错误）。
+func removeParts(parts []string) error {
+	var lastErr error
+	for _, p := range parts {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			lastErr = err
+		}
+	}
+	return lastErr
+}
+
+// parseSplitSize 解析形如 "1.8G" / "1800M" / "2000000000" 的尺寸字符串为字节数。
+// 支持 K/M/G/T（不区分大小写），裸数字视为字节。空串返回 0。
+func parseSplitSize(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	last := s[len(s)-1]
+	mul := int64(1)
+	num := s
+	switch last {
+	case 'k', 'K':
+		mul = 1024
+		num = s[:len(s)-1]
+	case 'm', 'M':
+		mul = 1024 * 1024
+		num = s[:len(s)-1]
+	case 'g', 'G':
+		mul = 1024 * 1024 * 1024
+		num = s[:len(s)-1]
+	case 't', 'T':
+		mul = 1024 * 1024 * 1024 * 1024
+		num = s[:len(s)-1]
+	}
+	// 允许小数，如 1.8G
+	f, err := strconv.ParseFloat(num, 64)
+	if err != nil {
+		return 0, fmt.Errorf("无法解析尺寸 %q: %w", s, err)
+	}
+	return int64(f * float64(mul)), nil
 }
